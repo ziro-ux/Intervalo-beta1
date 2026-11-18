@@ -1,0 +1,8 @@
+{
+  "appId": "app.intervalo.tata",
+  "appName": "Intervalo",
+  "webDir": "www",
+  "backgroundColor": "#13243a",
+  "server": { "androidScheme": "https" },
+  "android": { "adjustMarginsForEdgeToEdge": "auto" }
+}

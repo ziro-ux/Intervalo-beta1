@@ -1,0 +1,39 @@
+name: Publicar Intervalo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Montar o site
+        run: |
+          mkdir _site
+          cp index.html manifest.webmanifest sw.js icon-*.png _site/
+          # Cada publicação troca o nome do cache, então o celular baixa a versão nova sozinho.
+          sed -i "s/const CACHE = '[^']*'/const CACHE = 'intervalo-${GITHUB_SHA::7}'/" _site/sw.js
+          grep "const CACHE" _site/sw.js
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

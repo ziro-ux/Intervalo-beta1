@@ -1,0 +1,79 @@
+name: Gerar APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['index.html', 'package.json', 'capacitor.config.json', 'android-res/**', '.github/workflows/android.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar Capacitor
+        run: npm install --no-audit --no-fund
+
+      - name: Montar o app e criar o projeto Android
+        run: |
+          mkdir www
+          cp index.html www/
+          # versão e repositório para o aviso de atualização dentro do app
+          sed -i "s#__APP_VERSION__#1.${{ github.run_number }}#g; s#__APP_REPO__#${{ github.repository }}#g" www/index.html
+          npx cap add android
+
+      - name: Ícone, cores e permissões
+        run: |
+          command -v convert >/dev/null || sudo apt-get install -y imagemagick
+          RES=android/app/src/main/res
+          declare -A L=([mdpi]=48 [hdpi]=72 [xhdpi]=96 [xxhdpi]=144 [xxxhdpi]=192)
+          declare -A F=([mdpi]=108 [hdpi]=162 [xhdpi]=216 [xxhdpi]=324 [xxxhdpi]=432)
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            convert icon-512.png -resize ${L[$d]}x${L[$d]} $RES/mipmap-$d/ic_launcher.png
+            cp $RES/mipmap-$d/ic_launcher.png $RES/mipmap-$d/ic_launcher_round.png
+            convert icon-maskable-512.png -resize ${F[$d]}x${F[$d]} $RES/mipmap-$d/ic_launcher_foreground.png
+          done
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <color name="ic_launcher_background">#13243A</color>\n</resources>\n' > $RES/values/ic_launcher_background.xml
+          # Barra de status e de navegação na cor da noite da Tata
+          sed -i '/name="AppTheme.NoActionBar"/a\        <item name="android:statusBarColor">#13243A</item>\n        <item name="android:navigationBarColor">#13243A</item>' $RES/values/styles.xml
+          # Ícone pequeno das notificações (lembretes)
+          cp -r android-res/* $RES/
+          # Notificações (Android 13+)
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          # Câmera para o leitor de código de barras
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          # Cada build ganha um número de versão maior, para instalar por cima do anterior
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
+          npx cap sync android
+
+      - name: Compilar o APK
+        run: |
+          mkdir -p ~/.android
+          cp intervalo-debug.keystore ~/.android/debug.keystore
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Publicar release com o APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: 1.${{ github.run_number }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk "Intervalo-$VER.apk"
+          MSG=$(git log -1 --pretty=%s)
+          gh release create "v$VER" "Intervalo-$VER.apk" \
+            --title "Intervalo $VER" \
+            --notes "Baixe o arquivo Intervalo-$VER.apk abaixo e instale por cima do app atual. Seus dados continuam no aparelho. Mudança: $MSG" \
+            --latest
