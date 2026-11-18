@@ -1306,10 +1306,16 @@ let catalogLimit=40;
 let onlineFirst=false,onlineTimer=0,basket=[],onlineFoods=[],searchController=null,searchSequence=0,scannerStream=null,scannerTimer=null,recognition=null,scanGeneration=0;
 const foodCache=new Map(),requestTimes=[];
 const plainSearch=x=>String(x).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR');
+// Use the same spelling for product names and the typed query.
+function catalogSpelling(text){
+ const name=plainSearch(text).replace(/\bextra[\s-]*virge(?:m|ns)\b/g,'extra virgem');
+ return (/\bazeites?\b/.test(name)?name.replace(/\bultra[\s-]*virge(?:m|ns)\b/g,'extra virgem'):name).trim().replace(/\s+/g,' ');
+}
+function catalogTokens(text){return catalogSpelling(text).split(/\s+/).filter(term=>term&&!STOP.has(term))}
 // Plural-tolerant matching: "ovos" finds "Ovo, de galinha", "paes" finds "Pao", "limoes" finds "Limao".
 function stemTerm(t){if(t.length<4)return t;if(/(oes|aes)$/.test(t))return t.slice(0,-3)+'ao';if(/ns$/.test(t))return t.slice(0,-2)+'m';if(/(res|zes|eses)$/.test(t))return t.slice(0,-2);if(/s$/.test(t))return t.slice(0,-1);return t}
 const plainNames=new Map();
-function plainName(f){const k=f.id+'|'+f.name;let v=plainNames.get(k);if(v===undefined){const b=bmap().get(f.id);v=plainSearch(f.name+(b?' '+b.name+' '+b.taco:''));plainNames.set(k,v)}return v}
+function plainName(f){const k=f.id+'|'+f.name+'|'+(f.brand||'');let v=plainNames.get(k);if(v===undefined){const b=bmap().get(f.id);v=catalogSpelling(f.name+' '+(f.brand||'')+(b?' '+b.name+' '+b.taco:''));plainNames.set(k,v)}return v}
 const STOP=new Set(['de','da','do','das','dos','e','a','o','as','os','na','no','em','para','tipo','um','uma','c']);
 const SYN={file:['peito'],bife:['file','peito'],peito:['file'],marmitex:['prato'],batatinha:['batata'],refri:['refrigerante'],coca:['refrigerante'],macarrao:['massa'],miojo:['macarrao'],presunto:['apresuntado']};
 const swapGender=t=>t.length>=4&&/[ao]$/.test(t)?t.slice(0,-1)+(t.endsWith('o')?'a':'o'):t;
@@ -1334,7 +1340,7 @@ function stopScanner(){scanGeneration++;clearTimeout(scannerTimer);scannerStream
 function stopFoodMedia(){stopScanner();stopVoice();searchController?.abort();searchSequence++;}
 function selectFoodTab(tab){stopFoodMedia();for(const b of document.querySelectorAll('[data-food-tab]')){b.setAttribute('aria-selected',String(b.dataset.foodTab===tab));b.tabIndex=b.dataset.foodTab===tab?0:-1}$('barcodePane').hidden=true;$('foodStatus').textContent='';if(tab==='barcode')openScan();if(tab==='voice')openVoice();}
 for(const b of document.querySelectorAll('[data-food-tab]')){b.onclick=()=>selectFoodTab(b.dataset.foodTab);b.onkeydown=e=>{const tabs=[...document.querySelectorAll('[data-food-tab]')];let i=tabs.indexOf(b);if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();i=e.key==='Home'?0:e.key==='End'?3:(i+(e.key==='ArrowRight'?1:2))%3;tabs[i].click();tabs[i].focus()}}}
-function openCatalog(forMeal){catalogLimit=40;catalogForMeal=forMeal;basket=[];onlineFoods=[];onlineFirst=false;clearTimeout(onlineTimer);$('foodSearch').value='';$('foodSort').value='frequent';$('catalogTitle').textContent=forMeal?state.prefs.mealNames[mealCategory]:'Meus alimentos';$('foodBasket').hidden=true;selectFoodTab('search');renderCatalog();renderBasket();openDialog('catalogDialog');$('catalogDialog').scrollTop=0;$('closeCatalog').focus({preventScroll:true})}
+function openCatalog(forMeal){catalogLimit=40;catalogForMeal=forMeal;basket=[];onlineQuery='';onlineFoods=[];onlineFirst=false;clearTimeout(onlineTimer);$('foodSearch').value='';$('foodSort').value='frequent';$('catalogTitle').textContent=forMeal?state.prefs.mealNames[mealCategory]:'Meus alimentos';$('foodBasket').hidden=true;selectFoodTab('search');renderCatalog();renderBasket();openDialog('catalogDialog');$('catalogDialog').scrollTop=0;$('closeCatalog').focus({preventScroll:true})}
 function closeFoodCatalog(){if(basket.length){confirm('Descartar os alimentos selecionados que ainda não foram salvos?',()=>{basket=[];$('catalogDialog').close()},'Descartar')}else $('catalogDialog').close()}
 $('closeCatalog').onclick=closeFoodCatalog;$('catalogDialog').addEventListener('cancel',e=>{e.preventDefault();closeFoodCatalog()});$('catalogDialog').addEventListener('close',stopFoodMedia);
 function catalogFoods(){const all=new Map();for(const f of builtinFoods)all.set(f.id,f);if(['recent','frequent'].includes($('foodSort').value))for(const m of state.meals)all.set(m.food.id,m.food);for(const f of state.foods)all.set(f.id,f);return [...all.values()]}
@@ -1364,7 +1370,7 @@ function dishRow(d,withDelete){const row=el('div',undefined,'catalog-row dish-ro
  return row}
 function addDish(d){if(!catalogForMeal){toast('Abra uma refeição no diário para adicionar o prato.');return}for(const it of d.items)basket.push({id:id(),day:mealContextDay,category:mealCategory,food:JSON.parse(JSON.stringify(it.food)),amount:it.amount});renderBasket();toast('Prato adicionado: '+d.items.length+(d.items.length===1?' item':' itens'))}
 function renderCatalog(){
- const chip=$('foodSort').value,raw=$('foodSearch').value.trim(),search=plainSearch(raw),terms=search.split(/\s+/).filter(t=>t&&!STOP.has(t)),list=$('foodList');
+ const chip=$('foodSort').value,raw=$('foodSearch').value.trim(),terms=catalogTokens(raw),list=$('foodList');
  document.querySelectorAll('#foodChips button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.chip===(chip==='name'||chip==='recent'?'frequent':chip))));
  list.replaceChildren();$('foodCredit').hidden=true;
  const head=t=>list.append(el('p',t,'food-group'));
@@ -1385,8 +1391,8 @@ function renderCatalog(){
  const labels=['Seus alimentos','Mais comuns','Mais comuns','Outras opções'],multi=showOnline&&new Set([...T.values()].map(t=>labels[t])).size>1;let last='',shown=0;
  for(const f of matched){if(shown>=catalogLimit)break;const lb=labels[T.get(f.id)];if(multi&&lb!==last){head(lb);last=lb}list.append(foodRow(f));shown++}
  if(matched.length>catalogLimit){const more=el('button','Mostrar mais ('+(matched.length-catalogLimit)+')','secondary more-online');more.type='button';more.onclick=()=>{catalogLimit+=40;renderCatalog()};list.append(more)}
- if(similar.length){head('Resultados parecidos');for(const f of similar)list.append(foodRow(f))}
  if(!onlineFirst)onlineBlock();
+ if(similar.length){head('Resultados parecidos');for(const f of similar)list.append(foodRow(f))}
  if(!matched.length&&!similar.length&&!online.length)list.append(el('p',chip==='favorite'?(raw?'Nenhum favorito com esse nome.':'Nenhum favorito ainda. Ao escolher um alimento, toque na estrela para guardar aqui.'):chip==='mine'?(raw?'Nenhum alimento seu com esse nome.':'Você ainda não cadastrou alimentos. Use "Cadastrar pelo rótulo" logo abaixo.'):chip==='verified'?'Nenhum alimento verificado com esse nome.':raw?'Nada com esse nome no aparelho.':'Nenhum alimento ainda.','food-empty'));
  if(showOnline&&raw.length>=2&&onlineQuery!==raw&&navigator.onLine!==false&&!onlineFirst){const nb=el('button','Buscar "'+raw+'" na internet','textbtn search-net');nb.type='button';nb.onclick=()=>{clearTimeout(onlineTimer);searchFoods(false,false)};list.append(nb)}
 }
@@ -1403,19 +1409,39 @@ function offFood(p){const n=p.nutriments||{},num=v=>v===undefined||v===null||v==
  f.kcal=kcal;f.carbs=carbs;f.protein=protein;f.fat=fat;f.fiber=Number.isFinite(fiber)?fiber:0;
  if(['ml','l','cl'].includes(String(p.product_quantity_unit).toLowerCase())){f.base='portion';f.portion='100 ml'}return validFood(f)?f:null}
 async function getJSON(url,ms){searchController?.abort();const ctrl=new AbortController();searchController=ctrl;const t=setTimeout(()=>ctrl.abort(),ms);try{const r=await fetch(url,{signal:ctrl.signal});if(!r.ok)throw Error('http '+r.status);return await r.json()}finally{clearTimeout(t)}}
-async function fetchFoods(query,barcode=false){const key=(barcode?'code:':'name:')+query.toLowerCase();const cached=foodCache.get(key);if(cached)return cached;const now=Date.now();while(requestTimes.length&&requestTimes[0]<now-60000)requestTimes.shift();if(requestTimes.length>=8)throw Error('Muitas buscas seguidas. Aguarde um minuto para buscar na internet de novo.');requestTimes.push(now);const seq=searchSequence;
+async function fetchFoods(query,barcode=false){const lookup=barcode?query:catalogSpelling(query);const key=(barcode?'code:':'name:')+lookup;const cached=foodCache.get(key);if(cached)return cached;const now=Date.now();while(requestTimes.length&&requestTimes[0]<now-60000)requestTimes.shift();if(requestTimes.length>=8)throw Error('Muitas buscas seguidas. Aguarde um minuto para buscar na internet de novo.');requestTimes.push(now);const seq=searchSequence;
  const fields='code,product_name,product_name_pt,nutriments,product_quantity_unit,brands,serving_size,serving_quantity';let result=[];
  if(barcode){const d=await getJSON('https://world.openfoodfacts.org/api/v3/product/'+encodeURIComponent(query)+'.json?fields='+fields,15000);result=(d.product?[d.product]:[]).map(offFood).filter(Boolean)}
  else{
-  try{const d=await getJSON('https://search.openfoodfacts.org/search?q='+encodeURIComponent(query)+'&page_size=30&langs=pt&fields=code,product_name,nutriments,product_quantity_unit,brands,serving_size,serving_quantity',9000);result=(d.hits||[]).map(offFood).filter(Boolean)}catch(e){if(seq!==searchSequence)throw Object.assign(Error('stale'),{name:'AbortError'})}
-  if(!result.length){const d=await getJSON('https://world.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(query)+'&search_simple=1&action=process&json=1&page_size=30&sort_by=unique_scans_n&fields='+fields,15000);result=(d.products||[]).map(offFood).filter(Boolean)}
+  const terms=catalogTokens(lookup);
+  const rank=f=>termsScore(catalogSpelling(f.name+' '+(f.brand||'')),terms).n;
+  try{
+   const url=new URL('https://search.openfoodfacts.org/search');
+   url.search=new URLSearchParams({q:lookup,page_size:'40',langs:'pt',fields});
+   const d=await getJSON(url,5500);
+   result=(d.hits||[]).map(offFood).filter(Boolean);
+  }catch(e){if(seq!==searchSequence)throw e}
+  if(!result.some(f=>rank(f)===terms.length)){
+   // Brazilian labels can join extra and virgem. Retrieve candidates by the
+   // remaining words, then compare the full name and brand on the device.
+   const broad=lookup.includes('azeite')?lookup.replace(/\bextra virgem\b/g,'').trim():lookup;
+   const url=new URL('https://br.openfoodfacts.org/cgi/search.pl');
+   url.search=new URLSearchParams({search_terms:broad,search_simple:'1',action:'process',json:'1',page_size:'50',fields});
+   try{
+    const d=await getJSON(url,8500);
+    result.push(...(d.products||[]).map(offFood).filter(Boolean));
+   }catch(e){if(!result.length||seq!==searchSequence)throw e}
+  }
+  result.sort((a,b)=>rank(b)-rank(a));
  }
- const seen=new Set();result=result.filter(f=>{const k=f.name.toLowerCase()+'|'+Math.round(f.kcal);if(seen.has(k))return false;seen.add(k);return true});
- foodCache.set(key,result);return result}
+ const seen=new Set();
+ result=result.filter(f=>{if(seen.has(f.barcode))return false;seen.add(f.barcode);return true});
+ if(result.length)foodCache.set(key,result);
+ return result}
 async function searchFoods(barcode=false,auto=false){const query=(barcode?$('barcodeInput').value:$('foodSearch').value).trim();if(barcode?!/^\d{8,14}$/.test(query):query.length<(auto?3:2)){if(!auto)$('foodStatus').textContent=barcode?'Digite de 8 a 14 números do código.':'Digite ao menos 2 letras para buscar.';return}
  if(navigator.onLine===false){$('foodStatus').textContent='Sem internet agora. Mostrando só os alimentos do aparelho.';return}
  const sequence=++searchSequence;$('foodStatus').textContent='Buscando na internet…';
- try{const result=await fetchFoods(query,barcode);if(sequence!==searchSequence||!$('catalogDialog').open)return;onlineFoods=result;onlineAll=false;onlineFirst=barcode;if(barcode){$('foodSearch').value='';$('foodSort').value='name'}renderCatalog();if(barcode)$('catalogDialog').scrollTop=0;if(!barcode)onlineQuery=query;$('foodStatus').textContent=result.length?'':'Nada na internet com dados completos para essa busca.'}
+ try{const result=await fetchFoods(query,barcode);if(sequence!==searchSequence||!$('catalogDialog').open)return;onlineFoods=result;onlineAll=false;onlineFirst=barcode;if(barcode){$('foodSearch').value='';$('foodSort').value='name'}if(!barcode)onlineQuery=result.length?query:'';renderCatalog();if(barcode)$('catalogDialog').scrollTop=0;$('foodStatus').textContent=result.length?'':'Nada na internet com dados completos para essa busca.'}
  catch(e){if(sequence!==searchSequence)return;$('foodStatus').textContent=e.name==='AbortError'?'A internet demorou demais. Mostrando só os alimentos do aparelho.':/Muitas buscas/.test(e.message)?e.message:'Não consegui buscar na internet agora. Mostrando só os alimentos do aparelho.'}}
 $('searchFoodForm').onsubmit=e=>{e.preventDefault();clearTimeout(onlineTimer);renderCatalog();searchFoods(false,false)};
 let scannedBarcode='',voiceGeneration=0,voiceListening=false,torchEnabled=false;

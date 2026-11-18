@@ -1,5 +1,5 @@
 // Intervalo: cache do app para funcionar offline. Os dados do usuário ficam no localStorage, nunca aqui.
-const CACHE = 'intervalo-v19';
+const CACHE = 'intervalo-v20';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
