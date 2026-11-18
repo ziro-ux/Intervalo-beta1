@@ -1,6 +1,6 @@
 {
-  "appId": "app.intervalo.tata",
-  "appName": "Intervalo",
+  "appId": "app.intervalo.tata.beta",
+  "appName": "Intervalo Beta",
   "webDir": "www",
   "backgroundColor": "#13243a",
   "server": { "androidScheme": "https" },
